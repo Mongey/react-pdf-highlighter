@@ -31,6 +31,7 @@ class AreaHighlight extends Component<Props> {
           onChange(boundingRect);
         }}
         onResizeStop={(_, direction, ref, delta, position) => {
+          console.log("I am here");
           const boundingRect = {
             top: position.y,
             left: position.x,

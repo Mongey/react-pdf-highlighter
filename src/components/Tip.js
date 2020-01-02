@@ -18,7 +18,7 @@ type Props = {
 
 class Tip extends Component<Props, State> {
   state = {
-    compact: true,
+    compact: false,
     text: "",
     emoji: ""
   };

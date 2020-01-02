@@ -1,7 +1,6 @@
 // @flow
 import React, { PureComponent } from "react";
 import ReactDom from "react-dom";
-import Pointable from "react-pointable";
 import _ from "lodash/fp";
 import { PDFViewer, PDFLinkService } from "pdfjs-dist/web/pdf_viewer";
 
@@ -27,13 +26,13 @@ import { scaledToViewport, viewportToScaled } from "../lib/coordinates";
 
 import type {
   T_Position,
-  T_ScaledPosition,
-  T_Highlight,
-  T_Scaled,
-  T_LTWH,
-  T_PDFJS_Viewer,
-  T_PDFJS_Document,
-  T_PDFJS_LinkService
+    T_ScaledPosition,
+    T_Highlight,
+    T_Scaled,
+    T_LTWH,
+    T_PDFJS_Viewer,
+    T_PDFJS_Document,
+    T_PDFJS_LinkService
 } from "../types";
 
 type T_ViewportHighlight<T_HT> = { position: T_Position } & T_HT;
@@ -74,16 +73,17 @@ type Props<T_HT> = {
     content: { text?: string, image?: string },
     hideTipAndSelection: () => void,
     transformSelection: () => void
-  ) => ?React$Element<*>,
+  ) =>?React$Element<*>,
   enableAreaSelection: (event: MouseEvent) => boolean
 };
 
 const EMPTY_ID = "empty-id";
 
+
 class PdfHighlighter<T_HT: T_Highlight> extends PureComponent<
   Props<T_HT>,
   State<T_HT>
-> {
+  > {
   state = {
     ghostHighlight: null,
     isCollapsed: true,
@@ -233,7 +233,69 @@ class PdfHighlighter<T_HT: T_Highlight> extends PureComponent<
   }
 
   screenshot(position: T_LTWH, pageNumber: number) {
-    const canvas = this.viewer.getPageView(pageNumber - 1).canvas;
+    let pageIndex = pageNumber - 1;
+    let initialPage = this.viewer.getPageView(pageIndex);
+
+    var canvas = initialPage.canvas;
+    var pages = [initialPage];
+
+    const dpr: number = window.devicePixelRatio;
+    const requiresAnotherPage = ((position.top + position.height) * dpr) > canvas.height;
+
+    var newPageIndex = pageIndex + 1;
+
+    if (requiresAnotherPage) {
+      var pages = [initialPage, page];
+      console.log("SCREENSHOT REQUIRES ANOTHER PAGE")
+      let page = this.viewer.getPageView(newPageIndex);
+
+      let originalCanvas = canvas
+      let canvases = [originalCanvas, page.canvas];
+
+      // @TODO: cache this?
+      const newCanvas = document.createElement("canvas");
+
+      if (!(newCanvas instanceof HTMLCanvasElement)) {
+        return "";
+      }
+
+      let h = page.canvas.height + initialPage.canvas.height;
+      console.log(`c canvas of ${page.height} ; ${initialPage.height}`)
+      console.log(page)
+      console.log(initialPage)
+      newCanvas.width = Math.max(page.canvas.width, initialPage.canvas.width);
+      newCanvas.height = h
+      console.log(`New canvas of ${h}`)
+
+      const newCanvasContext = newCanvas.getContext("2d");
+      if (!newCanvasContext || !canvas) {
+        return "";
+      }
+
+      var heightOffset = 0;
+
+      for (let i = 0; i < canvases.length; i++) {
+        const c = canvases[i];
+
+        const left = 0;
+        const top = heightOffset;
+        const width = c.width;
+        const height = c.height;
+
+        // console.log(c.toDataURL("image/png"));
+        newCanvasContext.drawImage(
+          c,
+          0,
+          heightOffset,
+        );
+        console.log(`drawing at ${heightOffset}`)
+        heightOffset += height;
+      }
+
+      canvas = newCanvas;
+      console.log("new canvas");
+      //console.log(newCanvas.toDataURL("image/png"));
+    }
 
     return getAreaAsPng(canvas, position);
   }
@@ -250,52 +312,55 @@ class PdfHighlighter<T_HT: T_Highlight> extends PureComponent<
     for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber++) {
       const highlightLayer = this.findOrCreateHighlightLayer(pageNumber);
 
-      if (highlightLayer) {
-        ReactDom.render(
-          <div>
-            {(highlightsByPage[String(pageNumber)] || []).map(
-              (highlight, index) => {
-                const { position, ...rest } = highlight;
-
-                const viewportHighlight = {
-                  position: this.scaledPositionToViewport(position),
-                  ...rest
-                };
-
-                if (tip && tip.highlight.id === String(highlight.id)) {
-                  this.showTip(tip.highlight, tip.callback(viewportHighlight));
-                }
-
-                const isScrolledTo = Boolean(
-                  scrolledToHighlightId === highlight.id
-                );
-
-                return highlightTransform(
-                  viewportHighlight,
-                  index,
-                  (highlight, callback) => {
-                    this.setState({
-                      tip: { highlight, callback }
-                    });
-
-                    this.showTip(highlight, callback(highlight));
-                  },
-                  this.hideTipAndSelection,
-                  rect => {
-                    const viewport = this.viewer.getPageView(pageNumber - 1)
-                      .viewport;
-
-                    return viewportToScaled(rect, viewport);
-                  },
-                  boundingRect => this.screenshot(boundingRect, pageNumber),
-                  isScrolledTo
-                );
-              }
-            )}
-          </div>,
-          highlightLayer
-        );
+      if (!highlightLayer) {
+        continue
       }
+
+      ReactDom.render(
+        <div>
+          {(highlightsByPage[String(pageNumber)] || []).map(
+            (highlight, index) => {
+              const { position, ...rest } = highlight;
+
+              const viewportHighlight = {
+                position: this.scaledPositionToViewport(position),
+                ...rest
+              };
+
+              if (tip && tip.highlight.id === String(highlight.id)) {
+                this.showTip(tip.highlight, tip.callback(viewportHighlight));
+              }
+
+              const isScrolledTo = Boolean(
+                scrolledToHighlightId === highlight.id
+              );
+
+              return highlightTransform(
+                viewportHighlight,
+                index,
+                (highlight, callback) => {
+                  this.setState({
+                    tip: { highlight, callback }
+                  });
+
+                  this.showTip(highlight, callback(highlight));
+                },
+                this.hideTipAndSelection,
+
+                rect => {
+                  const viewport = this.viewer.getPageView(pageNumber - 1)
+                    .viewport;
+
+                  return viewportToScaled(rect, viewport);
+                },
+                boundingRect => this.screenshot(boundingRect, pageNumber),
+                isScrolledTo
+              );
+            }
+          )}
+        </div>,
+        highlightLayer
+      );
     }
   }
 
@@ -363,7 +428,7 @@ class PdfHighlighter<T_HT: T_Highlight> extends PureComponent<
         ...pageViewport.convertToPdfPoint(
           0,
           scaledToViewport(boundingRect, pageViewport, usePdfCoordinates).top -
-            scrollMargin
+          scrollMargin
         ),
         0
       ]
@@ -503,7 +568,7 @@ class PdfHighlighter<T_HT: T_Highlight> extends PureComponent<
     const { onSelectionFinished, enableAreaSelection } = this.props;
 
     return (
-      <Pointable onPointerDown={this.onMouseDown}>
+      <div onPointerDown={this.onMouseDown}>
         <div
           ref={node => (this.containerNode = node)}
           className="PdfHighlighter"
@@ -524,6 +589,9 @@ class PdfHighlighter<T_HT: T_Highlight> extends PureComponent<
               }
               onSelection={(startTarget, boundingRect, resetSelection) => {
                 const page = getPageFromElement(startTarget);
+                console.group("page");
+                console.log(page.node);
+                console.groupEnd();
 
                 if (!page) {
                   return;
@@ -546,6 +614,18 @@ class PdfHighlighter<T_HT: T_Highlight> extends PureComponent<
                 );
 
                 const image = this.screenshot(pageBoundingRect, page.number);
+
+                // hmm
+                const pageHeight = page.node.clientHeight;
+                const outSidePosition = viewportPosition.boundingRect
+
+                const endPosition = (outSidePosition.top + outSidePosition.height);
+                const outSideOfPage = endPosition > pageHeight;
+                console.log(outSideOfPage);
+
+                if (outSideOfPage) {
+                  console.warn("The bounding box is outside of this page; will not render correctly");
+                }
 
                 this.renderTipAtPosition(
                   viewportPosition,
@@ -572,7 +652,7 @@ class PdfHighlighter<T_HT: T_Highlight> extends PureComponent<
             />
           ) : null}
         </div>
-      </Pointable>
+      </div>
     );
   }
 }
